@@ -61,10 +61,6 @@ def sukurti_duomenu_baze():
         );
         ''')
 
-        # cursor.execute('''
-        # DROP TABLE objektai;
-        # ''')
-
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS objektai (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,13 +76,22 @@ def sukurti_duomenu_baze():
         ''')
 
         cursor.execute('''
+        DROP TABLE rezultatai;
+        ''')
+
+        cursor.execute('''
         CREATE TABLE IF NOT EXISTS rezultatai (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            projekto_id INTEGER NOT NULL,
             objekto_id INTEGER NOT NULL,
+            reiksme_objekto REAL NOT NULL,
             kriterijaus_id INTEGER NOT NULL,
+            reiksme_kriterijus REAL NOT NULL,
+            ar_teigiamas BOOLEAN DEFAULT 1, 
             reiksme REAL NOT NULL,
-            FOREIGN KEY(objekto_id) REFERENCES vertinami_objektai(id),
-            FOREIGN KEY(kriterijaus_id) REFERENCES vertinimo_kriterijai(id)
+            FOREIGN KEY(projekto_id) REFERENCES projektai(id),
+            FOREIGN KEY(objekto_id) REFERENCES objektai(id),
+            FOREIGN KEY(kriterijaus_id) REFERENCES kriterijai(id)
         );
         ''')
 
@@ -447,7 +452,7 @@ class PagrindinisLangas(QMainWindow):
                     self.table_objektai.setItem(eilute, 1, item_name)
 
                     item_url = QTableWidgetItem(str(objektas[3]))
-                    item_url.setFlags(item_url.flags() & Qt.ItemIsEditable)
+                    item_url.setFlags(item_url.flags() | Qt.ItemIsEditable)
                     self.table_objektai.setItem(eilute, 2, item_url)
 
                     item_note = QTableWidgetItem(str(objektas[4]))
@@ -470,7 +475,7 @@ class PagrindinisLangas(QMainWindow):
                         for kriterijus in self.kriterijai:
                             self.table_objektai.setColumnWidth(5 + reiksmes_nr, 200)
                             if kriterijus[7] == '':
-                                item_val = QTableWidgetItem(str(0.0))
+                                item_val = QTableWidgetItem(re.sub(r'[^0-9.]', '', str(reiksmes[reiksmes_nr])))
                                 item_val.setFlags(item_val.flags() | Qt.ItemIsEditable)
                                 item_val.setTextAlignment(Qt.AlignCenter)
                                 self.table_objektai.setItem(eilute, 5 + reiksmes_nr, item_val)
@@ -508,9 +513,7 @@ class PagrindinisLangas(QMainWindow):
 
             self.viso_objektu = eilute
 
-    def gauti_rezultatus(self):
-        QMessageBox.information(self, "Rezultatai", "Skaičiuojam rezultatus!")
-       
+
     def saugoti_projektus(self):  
         editor = self.table_projektai.focusWidget()
         if editor:
@@ -527,7 +530,13 @@ class PagrindinisLangas(QMainWindow):
     
         self.gauti_projekto_eilutes()
 
-    def saugoti_kriteriju(self):    
+    def saugoti_kriteriju(self):  
+
+        response = QMessageBox.question(self, 'Patvirtinimas', 'Ar tikrai norite iš naujo ištraukti duomenis? Išsitrins esami duomenys!',
+                                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if response == QMessageBox.No:
+            return
 
         editor = self.table_kriterijai.focusWidget()
         if editor:
@@ -580,8 +589,62 @@ class PagrindinisLangas(QMainWindow):
 
         self.gauti_kriteriju_eilutes()
 
+    def gauti_rezultatus(self):
+        response = QMessageBox.question(self, 'Patvirtinimas', 'Visi duomenys teisingi ir norite skaičiuoti?',
+                                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if response == QMessageBox.No:
+            return
+         
+        with sqlite3.connect("metodas.db") as conn:
+            c = conn.cursor()
+            c.execute("DELETE FROM rezultatai WHERE projekto_id = '" + str(self.projekto_id) + "'")
+            self.kriterijai = c.execute("SELECT * FROM kriterijai WHERE projekto_id = '" + str(self.projekto_id) + "'").fetchall()
+            self.objektai = c.execute("SELECT * FROM objektai WHERE pasirinktas = 1 AND projekto_id = '" + str(self.projekto_id) + "'").fetchall()
+            krit_nr = 0
+            for kriterijus in self.kriterijai:
+                for objektas in self.objektai:
+     
+                    objekto_reiksmes = str(objektas[7])
+                    objekto_reiksmes = objekto_reiksmes.split("|")
+                    objekto_reiksme = objekto_reiksmes[krit_nr]
+
+                    c.execute("""
+                    INSERT INTO rezultatai (projekto_id, objekto_id, reiksme_objekto, kriterijaus_id, reiksme_kriterijus, ar_teigiamas, reiksme)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (str(self.projekto_id), str(objektas[0]), str(objekto_reiksme), str(kriterijus[0]), str(kriterijus[4]), str(kriterijus[3]),  str(self.projekto_id)))
+
+                krit_nr += 1
+
+
+            c.execute("""
+                      SELECT * FROM rezultatai 
+                      LEFT OUTER JOIN objektai ON objektai.id = rezultatai.objekto_id
+                      LEFT OUTER JOIN kriterijai ON kriterijai.id = rezultatai.kriterijaus_id
+                      WHERE rezultatai.projekto_id = ?
+                      """, (str(self.projekto_id)))
+            eilutes = c.fetchall()
+
+            
+            stulpeliu_pavadinimai = [description[0] for description in c.description]
+        
+            self.table_rezultatai.setRowCount(len(eilutes))
+            self.table_rezultatai.setColumnCount(len(stulpeliu_pavadinimai))
+            self.table_rezultatai.setHorizontalHeaderLabels(stulpeliu_pavadinimai)
+
+            for eilutes_indeksas, eilute in enumerate(eilutes):
+                for stulpelio_indeksas, reiksme in enumerate(eilute):
+                    self.table_rezultatai.setItem(eilutes_indeksas, stulpelio_indeksas, QTableWidgetItem(str(reiksme)))
+            
+
     def trinti_projekta(self):
 
+        response = QMessageBox.question(self, 'Patvirtinimas', 'Ar tikrai norite trinti projektą? Išsitrins esami duomenys!',
+                                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if response == QMessageBox.No:
+            return
+        
         with sqlite3.connect("metodas.db") as conn:
             c = conn.cursor()
             c.execute("DELETE FROM projektai WHERE id = '" + str(self.projekto_id) + "'")
@@ -591,12 +654,24 @@ class PagrindinisLangas(QMainWindow):
         self.gauti_projekto_eilutes()
 
     def trinti_kriteriju(self):
+        response = QMessageBox.question(self, 'Patvirtinimas', 'Ar tikrai norite trinti esamą kriterijų? Išsitrins esami duomenys!',
+                                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if response == QMessageBox.No:
+            return
+        
         with sqlite3.connect("metodas.db") as conn:
             c = conn.cursor()
             c.execute("DELETE FROM kriterijai WHERE id = '" + str(self.kriterijaus_id) + "'")
         self.gauti_kriteriju_eilutes()
 
     def trinti_objektus(self):
+        response = QMessageBox.question(self, 'Patvirtinimas', 'Ar tikrai norite trinti objektus? Išsitrins visi šio projekto objektai!',
+                                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if response == QMessageBox.No:
+            return
+        
         with sqlite3.connect("metodas.db") as conn:
             c = conn.cursor()
             c.execute("DELETE FROM objektai WHERE projekto_id = '" + str(self.projekto_id) + "'")
@@ -610,6 +685,12 @@ class PagrindinisLangas(QMainWindow):
         self.move(window_geometry.topLeft())
 
     def gauti_objektus(self):
+
+        response = QMessageBox.question(self, 'Patvirtinimas', 'Ar tikrai norite iš naujo traukti objektus? Išsitrins visi šio projekto objektai!',
+                                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if response == QMessageBox.No:
+            return
 
         with sqlite3.connect("metodas.db") as conn:
             c = conn.cursor()
