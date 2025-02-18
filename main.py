@@ -554,7 +554,31 @@ class PagrindinisLangas(QMainWindow):
 
     def saugoti_objektus(self):
 
-        QMessageBox.warning(self, "Objektai", "Saugom objektus!")
+        editor = self.table_objektai.focusWidget()
+        if editor:
+            enter_event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Return, Qt.NoModifier)
+            QApplication.postEvent(editor, enter_event)
+
+        self.table_objektai.closeEditor(editor, QAbstractItemDelegate.SubmitModelCache)
+        self.table_objektai.clearFocus()
+
+        with sqlite3.connect("metodas.db") as conn:
+            c = conn.cursor()
+
+            for eilute in range(0, self.viso_objektu):
+                ar_prisk = self.table_objektai.cellWidget(eilute, 4).currentText()
+                if ar_prisk == "Pasirinktas":
+                    ar_prisk = str(1)
+                else:
+                    ar_prisk = str(0)
+
+                reiksmes_skaiciavimui = ''
+                for krit_nr in range(0, self.viso_kriteriju):
+                    reiksmes_skaiciavimui += self.table_objektai.item(eilute, 5 + krit_nr).text() + "|"
+
+                c.execute("UPDATE objektai SET pavadinimas = '" + self.table_objektai.item(eilute, 1).text() + "', nuoroda = '" + self.table_objektai.item(eilute, 2).text() + "', aprasymas = '" + self.table_objektai.item(eilute, 3).text()  + "', pasirinktas = " + ar_prisk + ", reiksmes_skaiciavimui = '" + str(reiksmes_skaiciavimui) + "' WHERE id = '" + self.table_objektai.item(eilute, 0).text() + "'")
+
+        self.gauti_kriteriju_eilutes()
 
     def trinti_projekta(self):
 
