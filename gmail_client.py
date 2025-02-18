@@ -13,8 +13,8 @@ class GmailClient:
         "https://www.googleapis.com/auth/gmail.readonly",
         "https://www.googleapis.com/auth/gmail.send",
     ]
-    TOKEN_PATH = 'token.json'
-    CREDENTIALS_PATH = 'credentials.json'
+    TOKEN_PATH = "token.json"
+    CREDENTIALS_PATH = "credentials.json"
 
     def __init__(self):
         self.creds = None
@@ -60,11 +60,10 @@ class GmailClient:
         except HttpError as error:
             return f"An error occurred: {error}"
 
-
     def list_labels(self):
         try:
             labels = self.service.users().labels().list(userId="me").execute()
-            labels_list = labels.get('labels', [])
+            labels_list = labels.get("labels", [])
             if not labels_list:
                 print("No labels found.")
             else:
@@ -81,27 +80,47 @@ class GmailClient:
             messages = []
             # If a label is provided, use it to filter the messages
             if label_id:
-                results = self.service.users().messages().list(userId="me", labelIds=[label_id], q=query, maxResults=max_results).execute()
+                results = (
+                    self.service.users()
+                    .messages()
+                    .list(
+                        userId="me",
+                        labelIds=[label_id],
+                        q=query,
+                        maxResults=max_results,
+                    )
+                    .execute()
+                )
             else:
-                results = self.service.users().messages().list(userId="me", q=query, maxResults=max_results).execute()
+                results = (
+                    self.service.users()
+                    .messages()
+                    .list(userId="me", q=query, maxResults=max_results)
+                    .execute()
+                )
 
             if "messages" in results:
                 messages.extend(results["messages"])
-            
+
             if not messages:
                 print("No messages found.")
             else:
                 print(f"Found {len(messages)} message(s).")
-            
+
             return messages
-        
+
         except HttpError as error:
             print(f"An error occurred while listing messages: {error}")
             return []
 
     def get_message(self, message_id):
         try:
-            message = self.service.users().messages().get(userId="me", id=message_id).execute()
+            message = (
+                self.service.users()
+                .messages()
+                .get(userId="me", id=message_id)
+                .execute()
+            )
             print(f"Message snippet: {message['snippet']}")
             return message
         except HttpError as error:
